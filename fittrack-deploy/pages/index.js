@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 
 const MOTIVATIONS = [
   "Bugün yapabileceğin en küçük şeyi yap. Küçük adımlar büyük değişimler yaratır.",
-  "Olay motivasyon değil,sistem kurmak. "
+  "Olay motivasyon değil,sistem kurmak.",
   "Kilo vermek bir maraton, sprint değil. Sabır en güçlü silahın.",
   "Dün ne yediğin değil, bugün ne yapacağın önemli.",
   "Vücudun sana teşekkür edecek. Sadece başla.",
