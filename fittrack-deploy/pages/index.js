@@ -83,6 +83,9 @@ export default function App() {
     const d = new Date(); d.setMonth(5); d.setDate(21);
     setForm(f => ({ ...f, date: d.toISOString().split('T')[0] }));
     dbGetAll().then(setPhotos).catch(() => setPhotos([]));
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
     setReady(true);
   }, []);
 
