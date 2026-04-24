@@ -319,6 +319,60 @@ export default function App() {
               <span style={{fontSize:15,fontWeight:600,color:'#1D9E75'}}>{todayKcal} kcal</span>
             </div>
           </div>}
+
+          {/* HAFTALIK KALORİ GEÇMİŞİ */}
+          <div style={S.secTitle}>Son 7 günün kalorisi</div>
+          <div style={S.card}>
+            {(() => {
+              const days7 = Array.from({length:7}, (_,i) => {
+                const d = new Date(); d.setDate(d.getDate() - (6-i));
+                const key = d.toISOString().split('T')[0];
+                const foods = st.foodLog[key] || [];
+                const kcal = foods.reduce((s,f) => s+f.kcal, 0);
+                const lbl = i===6 ? 'Bugün' : i===5 ? 'Dün' : d.toLocaleDateString('tr-TR',{weekday:'short',day:'numeric'});
+                return { key, lbl, kcal, foods };
+              });
+              const maxKcal = Math.max(...days7.map(d=>d.kcal), st.kcalGoal);
+              return days7.reverse().map((day, i) => (
+                <div key={day.key} style={{marginBottom: i<6?12:0}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                    <span style={{fontSize:13,color: day.key===todayStr()?'#1D9E75':'#555',fontWeight:day.key===todayStr()?600:400}}>{day.lbl}</span>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:12,color:'#888'}}>{day.kcal>0?`${day.kcal} kcal`:'—'}</span>
+                      {day.kcal>0 && <span style={{fontSize:11,color:day.kcal<=st.kcalGoal?'#1D9E75':'#D85A30'}}>
+                        {day.kcal<=st.kcalGoal?`✓ ${st.kcalGoal-day.kcal} altında`:`${day.kcal-st.kcalGoal} fazla`}
+                      </span>}
+                    </div>
+                  </div>
+                  <div style={{height:6,background:'#f0f0f0',borderRadius:4,overflow:'hidden'}}>
+                    <div style={{
+                      width: day.kcal>0 ? Math.min(100,(day.kcal/maxKcal)*100)+'%' : '0%',
+                      height:'100%', borderRadius:4,
+                      background: day.kcal>st.kcalGoal?'linear-gradient(90deg,#D85A30,#F09595)':'linear-gradient(90deg,#1D9E75,#9FE1CB)',
+                      transition:'width 0.4s'
+                    }}/>
+                  </div>
+                  {day.foods.length>0 && (
+                    <div style={{fontSize:11,color:'#aaa',marginTop:3}}>
+                      {day.foods.map(f=>f.name).join(', ').slice(0,60)}{day.foods.map(f=>f.name).join(', ').length>60?'…':''}
+                    </div>
+                  )}
+                </div>
+              ));
+            })()}
+            <div style={{marginTop:14,paddingTop:12,borderTop:'0.5px solid #eee',display:'flex',justifyContent:'space-between',fontSize:13}}>
+              <span style={{color:'#888'}}>7 günlük ortalama</span>
+              <span style={{fontWeight:600,color:'#1D9E75'}}>
+                {Math.round(
+                  Array.from({length:7},(_,i)=>{
+                    const d=new Date(); d.setDate(d.getDate()-i);
+                    const k=d.toISOString().split('T')[0];
+                    return (st.foodLog[k]||[]).reduce((s,f)=>s+f.kcal,0);
+                  }).filter(v=>v>0).reduce((a,b,_,arr)=>a+b/arr.length,0)
+                ) || 0} kcal
+              </span>
+            </div>
+          </div>
         </div>}
 
         {/* PROGRESS */}
