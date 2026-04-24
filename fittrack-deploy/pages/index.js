@@ -288,12 +288,19 @@ export default function App() {
               <button onClick={analyzeFood} style={{...S.btnP,flex:1,width:'auto'}} disabled={aiLoad}>{aiLoad?'Hesaplanıyor...':'AI ile hesapla ✨'}</button>
               <button onClick={addManual} style={{...S.btnS,width:'auto',padding:'11px 14px'}}>Manuel</button>
             </div>
-            {aiRes && <div style={{background:'#E1F5EE',borderRadius:10,padding:12,marginTop:10}}>
-              <div style={{fontSize:28,fontWeight:700,color:'#0F6E56'}}>{aiRes.kcal} kcal</div>
-              <div style={{fontSize:12,color:'#085041',marginTop:4}}>Protein: {aiRes.protein}g · Karb: {aiRes.karb}g · Yağ: {aiRes.yag}g</div>
-              <div style={{fontSize:13,color:'#085041',marginTop:6}}>{aiRes.ozet}</div>
-              <button onClick={confirmFood} style={{...S.btnP,marginTop:12}}>Ekle ✓</button>
-            </div>}
+            {aiRes && aiRes.error && (
+              <div style={{background:"#FEE",borderRadius:10,padding:12,marginTop:10,fontSize:13,color:"#c00"}}>
+                Hata: {aiRes.error}
+              </div>
+            )}
+            {aiRes && !aiRes.error && (
+              <div style={{background:"#E1F5EE",borderRadius:10,padding:12,marginTop:10}}>
+                <div style={{fontSize:28,fontWeight:700,color:"#0F6E56"}}>{aiRes.kcal} kcal</div>
+                <div style={{fontSize:12,color:"#085041",marginTop:4}}>Protein: {aiRes.protein}g · Karb: {aiRes.karb}g · Yağ: {aiRes.yag}g</div>
+                <div style={{fontSize:13,color:"#085041",marginTop:6}}>{aiRes.ozet}</div>
+                <button onClick={confirmFood} style={{...S.btnP,marginTop:12}}>Ekle ✓</button>
+              </div>
+            )}
           </div>
 
           {todayFoods.length > 0 && <div style={S.card}>
