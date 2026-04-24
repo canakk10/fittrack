@@ -1,0 +1,422 @@
+import Head from 'next/head';
+import { useEffect, useRef, useState } from 'react';
+
+const MOTIVATIONS = [
+  "Bugün yapabileceğin en küçük şeyi yap. Küçük adımlar büyük değişimler yaratır.",
+  "Kilo vermek bir maraton, sprint değil. Sabır en güçlü silahın.",
+  "Dün ne yediğin değil, bugün ne yapacağın önemli.",
+  "Vücudun sana teşekkür edecek. Sadece başla.",
+  "Motivasyon gelip gider, alışkanlık kalır. Bugün alışkanlık kur.",
+  "Her hayır dediğin fast food, hedefe bir adım daha yakın.",
+  "Mükemmel olmak zorunda değilsin, sadece devam et.",
+  "Yazın aynaya baktığında bu günleri hatırlayacaksın.",
+  "Su iç. Yürü. Uyu. Tekrarla.",
+  "Her gün biraz daha güçlü, biraz daha yakın."
+];
+
+const todayStr = () => new Date().toISOString().split('T')[0];
+const getLS = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
+const setLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+export default function App() {
+  const [st, setSt] = useState(null);
+  const [tab, setTab] = useState('home');
+  const [ready, setReady] = useState(false);
+  const [form, setForm] = useState({ name:'', weight:'94', height:'183', target:'77', date:'', kcal:'1800' });
+  const [foodInput, setFoodInput] = useState('');
+  const [aiRes, setAiRes] = useState(null);
+  const [aiLoad, setAiLoad] = useState(false);
+  const [dailyW, setDailyW] = useState('');
+  const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
+
+  useEffect(() => {
+    const saved = getLS('fittrack_v3', null);
+    setSt(saved);
+    const d = new Date(); d.setMonth(5); d.setDate(21);
+    setForm(f => ({ ...f, date: d.toISOString().split('T')[0] }));
+    setReady(true);
+  }, []);
+
+  const save = (newSt) => { setSt(newSt); setLS('fittrack_v3', newSt); };
+
+  const doSetup = () => {
+    const w = parseFloat(form.weight), h = parseFloat(form.height), t = parseFloat(form.target);
+    if (!w || !h || !t || !form.date) { alert('Lütfen tüm alanları doldur!'); return; }
+    const newSt = { setupDone: true, name: form.name || 'Dostum', startWeight: w, currentWeight: w, height: h, targetWeight: t, targetDate: form.date, kcalGoal: parseInt(form.kcal) || 1800, weightLog: [{ date: todayStr(), weight: w }], foodLog: {}, photos: {} };
+    save(newSt);
+    setTab('home');
+  };
+
+  const logWeight = () => {
+    const val = parseFloat(dailyW);
+    if (!val || val < 30 || val > 300) { alert('Geçerli kilo gir'); return; }
+    const newSt = { ...st, currentWeight: val, weightLog: [...st.weightLog] };
+    const idx = newSt.weightLog.findIndex(w => w.date === todayStr());
+    if (idx >= 0) newSt.weightLog[idx] = { date: todayStr(), weight: val };
+    else newSt.weightLog.push({ date: todayStr(), weight: val });
+    save(newSt);
+    setDailyW('');
+  };
+
+  const analyzeFood = async () => {
+    if (!foodInput.trim()) { alert('Ne yediğini yaz!'); return; }
+    setAiLoad(true); setAiRes(null);
+    try {
+      const r = await fetch('/api/analyze-food', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ food: foodInput }) });
+      const data = await r.json();
+      setAiRes(data);
+    } catch { alert('AI hesaplanamadı.'); }
+    setAiLoad(false);
+  };
+
+  const confirmFood = () => {
+    if (!aiRes) return;
+    const fl = { ...st.foodLog };
+    if (!fl[todayStr()]) fl[todayStr()] = [];
+    fl[todayStr()] = [...fl[todayStr()], { name: foodInput, kcal: aiRes.kcal, detail: `${aiRes.protein}g protein · ${aiRes.karb}g karb · ${aiRes.yag}g yağ` }];
+    save({ ...st, foodLog: fl });
+    setFoodInput(''); setAiRes(null);
+  };
+
+  const addManual = () => {
+    const name = prompt('Yemek adı:'); if (!name) return;
+    const kcal = parseInt(prompt('Kalori (kcal):')); if (!kcal) return;
+    const fl = { ...st.foodLog };
+    if (!fl[todayStr()]) fl[todayStr()] = [];
+    fl[todayStr()] = [...fl[todayStr()], { name, kcal, detail: 'Manuel giriş' }];
+    save({ ...st, foodLog: fl });
+  };
+
+  const removeFood = (i) => {
+    const fl = { ...st.foodLog };
+    fl[todayStr()] = fl[todayStr()].filter((_, idx) => idx !== i);
+    save({ ...st, foodLog: fl });
+  };
+
+  const handlePhoto = (n, e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const ph = { ...(st.photos || {}), [n]: ev.target.result };
+      save({ ...st, photos: ph });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveSettings = (sf) => {
+    save({ ...st, name: sf.name || st.name, height: parseFloat(sf.height) || st.height, targetWeight: parseFloat(sf.target) || st.targetWeight, targetDate: sf.date || st.targetDate, kcalGoal: parseInt(sf.kcal) || st.kcalGoal });
+    alert('Kaydedildi ✓');
+  };
+
+  if (!ready) return null;
+
+  // Setup screen
+  if (!st || !st.setupDone) return (
+    <div style={S.page}>
+      <Head><title>FitTrack — Kurulum</title><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/></Head>
+      <div style={S.setup}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>💪</div>
+        <h1 style={S.setupH1}>Merhaba!</h1>
+        <p style={S.setupSub}>Sana özel takip panelini kurmak için birkaç bilgiye ihtiyacım var.</p>
+        {[['Adın','name','text','Adını gir'],['Mevcut kilo (kg)','weight','number','94'],['Boy (cm)','height','number','183'],['Hedef kilo (kg)','target','number','77'],['Hedef tarih','date','date',''],['Günlük kalori hedefi','kcal','number','1800']].map(([lbl,k,type,ph]) => (
+          <div key={k} style={{ marginBottom: 12 }}>
+            <label style={S.lbl}>{lbl}</label>
+            <input type={type} value={form[k]} placeholder={ph} onChange={e => setForm(p => ({...p,[k]:e.target.value}))} style={S.inp} />
+          </div>
+        ))}
+        <button onClick={doSetup} style={{...S.btnP, marginTop: 8}}>Başla 🚀</button>
+      </div>
+    </div>
+  );
+
+  const todayFoods = st.foodLog[todayStr()] || [];
+  const todayKcal = todayFoods.reduce((s, f) => s + f.kcal, 0);
+  const kcalRem = st.kcalGoal - todayKcal;
+  const days = Math.max(0, Math.ceil((new Date(st.targetDate) - new Date()) / 86400000));
+  const totalLose = st.startWeight - st.targetWeight;
+  const lost = st.startWeight - st.currentWeight;
+  const pct = totalLose > 0 ? Math.min(100, Math.max(0, lost / totalLose * 100)) : 0;
+  const bmi = (st.currentWeight / ((st.height / 100) ** 2));
+  const bmiCat = bmi < 18.5 ? 'Zayıf' : bmi < 25 ? 'Normal' : bmi < 30 ? 'Fazla kilolu' : 'Obez';
+  const bmr = 10 * st.currentWeight + 6.25 * st.height - 5 * 30 + 5;
+  const tdee = Math.round(bmr * 1.375);
+  const mi = (new Date().getDay() + new Date().getDate()) % MOTIVATIONS.length;
+  const hr = new Date().getHours();
+  const greet = hr < 12 ? 'Günaydın' : hr < 18 ? 'İyi günler' : 'İyi akşamlar';
+
+  const sortedLogs = [...st.weightLog].sort((a, b) => a.date.localeCompare(b.date));
+
+  // Chart render
+  const ChartSVG = () => {
+    if (sortedLogs.length < 2) return <div style={{ textAlign:'center', padding:'32px 0', color:'#888', fontSize: 13 }}>En az 2 gün kilo gir, grafik oluşsun 📈</div>;
+    const W = 340, H = 160, PX = 28, PY = 14;
+    const iW = W - PX * 2, iH = H - PY * 2;
+    const weights = sortedLogs.map(l => l.weight);
+    const minW = Math.min(...weights, st.targetWeight) - 0.5;
+    const maxW = Math.max(...weights) + 0.5;
+    const xS = i => PX + (i / (sortedLogs.length - 1)) * iW;
+    const yS = w => PY + iH - ((w - minW) / (maxW - minW)) * iH;
+    const pts = sortedLogs.map((l, i) => [xS(i), yS(l.weight)]);
+    const pathD = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const fillD = `M${xS(0).toFixed(1)},${(PY+iH).toFixed(1)} ` + pts.map(p => `L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ') + ` L${xS(sortedLogs.length-1).toFixed(1)},${(PY+iH).toFixed(1)} Z`;
+    const ty = yS(st.targetWeight);
+    const yTicks = [minW, (minW+maxW)/2, maxW].map(v => ({ v, y: yS(v) }));
+    return (
+      <div style={{ position:'relative' }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height: H, overflow:'visible' }}>
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1D9E75" stopOpacity="0.2"/>
+              <stop offset="100%" stopColor="#1D9E75" stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          {yTicks.map(({v,y}) => (
+            <g key={v}>
+              <line x1={PX} y1={y} x2={W-PX} y2={y} stroke="#ccc" strokeWidth="0.5" strokeDasharray="3,3"/>
+              <text x={PX-4} y={y+4} textAnchor="end" fontSize="9" fill="#999">{v.toFixed(0)}</text>
+            </g>
+          ))}
+          <line x1={PX} y1={ty} x2={W-PX} y2={ty} stroke="#9FE1CB" strokeWidth="1.5" strokeDasharray="5,4"/>
+          <text x={W-PX+3} y={ty+4} fontSize="9" fill="#1D9E75">Hedef</text>
+          <path d={fillD} fill="url(#g1)"/>
+          <path d={pathD} fill="none" stroke="#1D9E75" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          {pts.map((p, i) => {
+            const l = sortedLogs[i];
+            const lbl = new Date(l.date).toLocaleDateString('tr-TR', { day:'numeric', month:'short' });
+            return (
+              <circle key={i} cx={p[0]} cy={p[1]} r="4.5" fill="#1D9E75" stroke="white" strokeWidth="2"
+                style={{ cursor:'pointer' }}
+                onMouseEnter={e => { const r = e.currentTarget.closest('svg').getBoundingClientRect(); setTooltip({ visible:true, text:`${lbl}: ${l.weight} kg`, x: p[0]/W*100, y: p[1] }); }}
+                onMouseLeave={() => setTooltip(t => ({...t, visible:false}))}
+                onTouchStart={e => { setTooltip({ visible:true, text:`${lbl}: ${l.weight} kg`, x: p[0]/W*100, y: p[1] }); }}
+                onTouchEnd={() => setTimeout(() => setTooltip(t => ({...t, visible:false})), 1500)}
+              />
+            );
+          })}
+        </svg>
+        {tooltip.visible && (
+          <div style={{ position:'absolute', top: tooltip.y - 32, left:`calc(${tooltip.x}% - 60px)`, background:'#0F6E56', color:'white', borderRadius:8, padding:'4px 10px', fontSize:12, pointerEvents:'none', whiteSpace:'nowrap' }}>
+            {tooltip.text}
+          </div>
+        )}
+        <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#999', marginTop:4 }}>
+          <span>{new Date(sortedLogs[0].date).toLocaleDateString('tr-TR',{day:'numeric',month:'short'})}</span>
+          <span>{new Date(sortedLogs[sortedLogs.length-1].date).toLocaleDateString('tr-TR',{day:'numeric',month:'short'})}</span>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={S.page}>
+      <Head><title>FitTrack 💪</title><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/><meta name="theme-color" content="#1D9E75"/></Head>
+      <div style={S.app}>
+
+        {/* HOME */}
+        {tab==='home' && <div style={S.screen}>
+          <div style={S.hero}>
+            <div style={{fontSize:13,opacity:0.85,marginBottom:4}}>{greet}, {st.name}!</div>
+            <div style={{fontSize:44,fontWeight:700,lineHeight:1}}>{st.currentWeight.toFixed(1)} <span style={{fontSize:20,fontWeight:400}}>kg</span></div>
+            <div style={{fontSize:13,opacity:0.8,marginTop:6}}>Hedef: {st.targetWeight} kg · {Math.max(0,st.currentWeight-st.targetWeight).toFixed(1)} kg daha</div>
+            <div style={S.countBox}>
+              <div><div style={{fontSize:32,fontWeight:700}}>{days}</div><div style={{fontSize:12,opacity:0.85}}>Yaza kalan gün</div></div>
+              <div style={{textAlign:'right'}}><div style={{fontSize:18,fontWeight:600}}>{Math.round(pct)}%</div><div style={{fontSize:12,opacity:0.85}}>hedefe ulaşıldı</div></div>
+            </div>
+            <div style={S.bmiPill}>BMI: {bmi.toFixed(1)} · {bmiCat}</div>
+          </div>
+
+          <div style={S.secTitle}>Kilo grafiği</div>
+          <div style={S.card}><ChartSVG/></div>
+
+          <div style={S.secTitle}>İlerleme</div>
+          <div style={S.card}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#888',marginBottom:6}}>
+              <span>{st.startWeight} kg (başlangıç)</span><span>{st.targetWeight} kg (hedef)</span>
+            </div>
+            <div style={S.progWrap}><div style={{...S.progBar,width:pct+'%'}}/></div>
+            <div style={{fontSize:12,color:'#888',marginTop:4}}>{lost>0?`${lost.toFixed(1)} kg verildi 🎉`:'Henüz kilo kaydı yok'}</div>
+          </div>
+
+          <div style={S.statGrid}>
+            <div style={S.statCard}>
+              <div style={S.statLbl}>Bugünkü kalori</div>
+              <div style={S.statVal}>{todayKcal} <span style={{fontSize:12}}>kcal</span></div>
+              <div style={S.progWrap}><div style={{...S.progBar,width:Math.min(100,todayKcal/st.kcalGoal*100)+'%',background:'linear-gradient(90deg,#EF9F27,#FAC775)'}}/></div>
+              <div style={{fontSize:12,color:kcalRem>=0?'#1D9E75':'#D85A30',marginTop:4}}>{kcalRem>=0?`${kcalRem} kcal kaldı`:`${Math.abs(kcalRem)} kcal fazla!`}</div>
+            </div>
+            <div style={S.statCard}>
+              <div style={S.statLbl}>Toplam verilen</div>
+              <div style={S.statVal}>{lost>0?lost.toFixed(1)+'kg':'–'}</div>
+              <div style={{fontSize:12,color:'#1D9E75',marginTop:4}}>{lost>0?'toplam verildi':''}</div>
+            </div>
+          </div>
+
+          <div style={S.motivCard}><div style={{fontSize:14,lineHeight:1.6,fontStyle:'italic',color:'#412402'}}>"{MOTIVATIONS[mi]}"</div><div style={{fontSize:12,color:'#633806',marginTop:8}}>— Günlük motivasyon</div></div>
+
+          <div style={S.card}>
+            <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>Bugünün kilosunu gir</div>
+            <div style={{display:'flex',gap:8}}>
+              <input type="number" value={dailyW} placeholder="kg" step="0.1" onChange={e=>setDailyW(e.target.value)} style={{...S.inp,flex:1}}/>
+              <button onClick={logWeight} style={{...S.btnP,width:'auto',padding:'10px 18px'}}>Kaydet</button>
+            </div>
+          </div>
+        </div>}
+
+        {/* FOOD */}
+        {tab==='food' && <div style={S.screen}>
+          <div style={S.secTitle}>Bugünkü kalori</div>
+          <div style={{...S.card,display:'flex',flexDirection:'column',alignItems:'center',padding:'20px 16px 14px'}}>
+            <svg width="130" height="130" viewBox="0 0 130 130">
+              <circle cx="65" cy="65" r="54" fill="none" stroke="#f0f0f0" strokeWidth="13"/>
+              <circle cx="65" cy="65" r="54" fill="none" stroke={todayKcal>st.kcalGoal?'#D85A30':'#1D9E75'} strokeWidth="13"
+                strokeDasharray="339" strokeDashoffset={339-(339*Math.min(1,todayKcal/st.kcalGoal))}
+                strokeLinecap="round" transform="rotate(-90 65 65)"/>
+              <text x="65" y="60" textAnchor="middle" fontSize="22" fontWeight="600" fill="#222">{todayKcal}</text>
+              <text x="65" y="78" textAnchor="middle" fontSize="12" fill="#888">kcal</text>
+            </svg>
+            <div style={{fontSize:13,color:'#888',marginTop:8}}>Günlük hedef: {st.kcalGoal} kcal</div>
+            <div style={{display:'flex',gap:24,marginTop:12}}>
+              <div style={{textAlign:'center'}}><div style={{fontSize:18,fontWeight:600}}>{todayKcal}</div><div style={{fontSize:11,color:'#888'}}>yenilen</div></div>
+              <div style={{textAlign:'center'}}><div style={{fontSize:18,fontWeight:600}}>{Math.max(0,kcalRem)}</div><div style={{fontSize:11,color:'#888'}}>kalan</div></div>
+            </div>
+          </div>
+
+          <div style={S.card}>
+            <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>Yemek ekle (AI ile)</div>
+            <div style={{marginBottom:12}}><input type="text" value={foodInput} placeholder="örn. 2 yumurta, 1 dilim ekmek, ayran" onChange={e=>setFoodInput(e.target.value)} style={S.inp}/></div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={analyzeFood} style={{...S.btnP,flex:1,width:'auto'}} disabled={aiLoad}>{aiLoad?'Hesaplanıyor...':'AI ile hesapla ✨'}</button>
+              <button onClick={addManual} style={{...S.btnS,width:'auto',padding:'11px 14px'}}>Manuel</button>
+            </div>
+            {aiRes && <div style={{background:'#E1F5EE',borderRadius:10,padding:12,marginTop:10}}>
+              <div style={{fontSize:28,fontWeight:700,color:'#0F6E56'}}>{aiRes.kcal} kcal</div>
+              <div style={{fontSize:12,color:'#085041',marginTop:4}}>Protein: {aiRes.protein}g · Karb: {aiRes.karb}g · Yağ: {aiRes.yag}g</div>
+              <div style={{fontSize:13,color:'#085041',marginTop:6}}>{aiRes.ozet}</div>
+              <button onClick={confirmFood} style={{...S.btnP,marginTop:12}}>Ekle ✓</button>
+            </div>}
+          </div>
+
+          {todayFoods.length > 0 && <div style={S.card}>
+            <div style={{fontSize:14,fontWeight:500,marginBottom:4}}>Bugün yenenler</div>
+            {todayFoods.map((f,i) => (
+              <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:i<todayFoods.length-1?'0.5px solid #eee':'none'}}>
+                <div><div style={{fontSize:14}}>{f.name}</div><div style={{fontSize:11,color:'#999'}}>{f.detail}</div></div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:13,color:'#1D9E75',fontWeight:500}}>{f.kcal} kcal</span>
+                  <span onClick={()=>removeFood(i)} style={{cursor:'pointer',color:'#ccc',fontSize:18}}>×</span>
+                </div>
+              </div>
+            ))}
+            <div style={{paddingTop:10,borderTop:'0.5px solid #eee',marginTop:4,display:'flex',justifyContent:'space-between'}}>
+              <span style={{fontSize:13,color:'#888'}}>Toplam</span>
+              <span style={{fontSize:15,fontWeight:600,color:'#1D9E75'}}>{todayKcal} kcal</span>
+            </div>
+          </div>}
+        </div>}
+
+        {/* PROGRESS */}
+        {tab==='progress' && <div style={S.screen}>
+          <div style={S.secTitle}>Kilo geçmişi</div>
+          <div style={S.card}>
+            {[...st.weightLog].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,20).map((l,i,arr) => {
+              const weights = arr.map(x=>x.weight);
+              const mn = Math.min(...weights), mx = Math.max(...weights), rng = mx-mn||1;
+              const p = ((l.weight-mn)/rng*65+20).toFixed(0);
+              const lbl = new Date(l.date).toLocaleDateString('tr-TR',{weekday:'short',day:'numeric',month:'short'});
+              return <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:i<arr.length-1?'0.5px solid #f0f0f0':'none'}}>
+                <div style={{fontSize:12,color:'#888',width:90,flexShrink:0}}>{lbl}</div>
+                <div style={{flex:1,height:6,background:'#f0f0f0',borderRadius:4,overflow:'hidden'}}>
+                  <div style={{width:p+'%',height:'100%',background:'#1D9E75',borderRadius:4}}/>
+                </div>
+                <div style={{fontSize:13,fontWeight:500,width:50,textAlign:'right'}}>{l.weight} kg</div>
+              </div>;
+            })}
+            {st.weightLog.length===0 && <div style={{color:'#ccc',textAlign:'center',padding:16,fontSize:13}}>Henüz kayıt yok</div>}
+          </div>
+
+          <div style={S.secTitle}>Fotoğraf karşılaştırması</div>
+          <div style={S.card}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              {[1,2].map(n => (
+                <div key={n}>
+                  <div onClick={()=>document.getElementById(`ph${n}`).click()} style={{border:'1.5px dashed #ccc',borderRadius:14,aspectRatio:'3/4',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',background:'#fafafa',fontSize:12,color:'#aaa',gap:6,position:'relative',overflow:'hidden'}}>
+                    {st.photos && st.photos[n] ? <img src={st.photos[n]} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}/> : <><span style={{fontSize:28}}>📷</span><span>Ekle</span></>}
+                  </div>
+                  <div style={{fontSize:11,color:'#888',textAlign:'center',marginTop:6}}>{n===1?'Başlangıç':'Güncel'}</div>
+                  <input type="file" accept="image/*" id={`ph${n}`} style={{display:'none'}} onChange={e=>handlePhoto(n,e)}/>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>}
+
+        {/* SETTINGS */}
+        {tab==='settings' && <SettingsTab st={st} tdee={tdee} bmi={bmi} onSave={saveSettings} onReset={()=>{if(confirm('Tüm veriler silinecek?')){localStorage.removeItem('fittrack_v3');window.location.reload();}}}/>}
+
+        {/* TAB BAR */}
+        <div style={S.tabBar}>
+          {[['home','🏠','Ana Sayfa'],['food','🍽️','Kalori'],['progress','📊','İlerleme'],['settings','⚙️','Ayarlar']].map(([id,icon,lbl]) => (
+            <button key={id} onClick={()=>setTab(id)} style={{...S.tabBtn,color:tab===id?'#1D9E75':'#aaa'}}>
+              <span style={{fontSize:20}}>{icon}</span><span style={{fontSize:10}}>{lbl}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsTab({ st, tdee, bmi, onSave, onReset }) {
+  const [sf, setSf] = useState({ name: st.name, height: st.height, target: st.targetWeight, date: st.targetDate, kcal: st.kcalGoal });
+  return (
+    <div style={S.screen}>
+      <div style={S.secTitle}>Profil & Ayarlar</div>
+      <div style={S.card}>
+        {[['Adın','name','text'],['Boy (cm)','height','number'],['Hedef kilo (kg)','target','number'],['Hedef tarih','date','date'],['Günlük kalori hedefi','kcal','number']].map(([lbl,k,type]) => (
+          <div key={k} style={{marginBottom:12}}>
+            <label style={S.lbl}>{lbl}</label>
+            <input type={type} value={sf[k]} onChange={e=>setSf(p=>({...p,[k]:e.target.value}))} style={S.inp}/>
+          </div>
+        ))}
+        <button onClick={()=>onSave(sf)} style={S.btnP}>Kaydet</button>
+      </div>
+      <div style={S.card}>
+        <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>Hesaplanan değerler</div>
+        <div style={{fontSize:13,color:'#888',lineHeight:2}}>
+          BMI: {bmi.toFixed(1)}<br/>
+          Günlük yakım (TDEE): ~{tdee} kcal<br/>
+          Kalori açığın: ~{tdee - st.kcalGoal} kcal/gün<br/>
+          Teorik haftalık kayıp: ~{((tdee - st.kcalGoal)*7/7700).toFixed(2)} kg/hafta
+        </div>
+      </div>
+      <button onClick={onReset} style={{...S.btnS,marginBottom:20}}>Sıfırla / Yeniden başla</button>
+    </div>
+  );
+}
+
+const S = {
+  page: { minHeight:'100vh', background:'#f8f9fa' },
+  app: { maxWidth:390, margin:'0 auto', paddingBottom:80 },
+  setup: { padding:'20px 16px' },
+  setupH1: { fontSize:26, fontWeight:700, marginBottom:6 },
+  setupSub: { fontSize:14, color:'#888', marginBottom:24, lineHeight:1.5 },
+  screen: { padding:'0 16px' },
+  hero: { background:'linear-gradient(135deg,#1D9E75,#0F6E56)', borderRadius:20, padding:20, margin:'14px 0 16px', color:'white' },
+  countBox: { marginTop:14, background:'rgba(255,255,255,0.15)', borderRadius:12, padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'center' },
+  bmiPill: { display:'inline-block', background:'rgba(255,255,255,0.2)', borderRadius:20, padding:'4px 12px', fontSize:12, marginTop:10 },
+  secTitle: { fontSize:12, fontWeight:500, color:'#888', margin:'18px 0 10px', textTransform:'uppercase', letterSpacing:'0.05em' },
+  card: { background:'white', border:'0.5px solid #eee', borderRadius:16, padding:16, marginBottom:12 },
+  statGrid: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 },
+  statCard: { background:'white', border:'0.5px solid #eee', borderRadius:14, padding:14 },
+  statLbl: { fontSize:12, color:'#888', marginBottom:4 },
+  statVal: { fontSize:22, fontWeight:600 },
+  progWrap: { background:'#f0f0f0', borderRadius:8, height:8, overflow:'hidden', margin:'6px 0 2px' },
+  progBar: { height:'100%', borderRadius:8, background:'linear-gradient(90deg,#1D9E75,#9FE1CB)', transition:'width 0.4s' },
+  motivCard: { background:'linear-gradient(135deg,#FAC775,#EF9F27)', borderRadius:16, padding:16, marginBottom:12 },
+  tabBar: { display:'flex', background:'white', borderTop:'0.5px solid #eee', position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:390, zIndex:100 },
+  tabBtn: { flex:1, padding:'10px 4px 8px', border:'none', background:'transparent', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:3 },
+  inp: { width:'100%', border:'0.5px solid #ddd', borderRadius:10, padding:'10px 12px', fontSize:15, background:'#fafafa', fontFamily:'inherit', outline:'none' },
+  lbl: { display:'block', fontSize:13, color:'#888', marginBottom:5 },
+  btnP: { width:'100%', padding:13, background:'#1D9E75', color:'white', border:'none', borderRadius:12, fontSize:15, fontWeight:500, cursor:'pointer', fontFamily:'inherit' },
+  btnS: { width:'100%', padding:11, background:'transparent', color:'#1D9E75', border:'1px solid #1D9E75', borderRadius:12, fontSize:14, cursor:'pointer', fontFamily:'inherit' },
+};
